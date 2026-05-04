@@ -1,60 +1,41 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React from 'react'
+import { motion } from 'framer-motion'
 
 interface ExampleChipsProps {
   onSelect: (text: string) => void
 }
 
-const FALLBACK_EXAMPLES = [
-  'Ordinary Portland Cement for residential building construction',
-  'TMT steel bars for RCC beam construction in 5-storey building',
-  'AAC blocks for lightweight partition walls',
-  'Crushed stone aggregates for concrete mixing',
-  'Fly ash bricks for boundary wall construction',
-  'What is IS 383 used for?',
-  'White cement for architectural finishes',
-  'Portland Slag Cement for marine structures',
+const examples = [
+  'OPC Cement for buildings',
+  'TMT bars for RCC beam',
+  'AAC blocks',
+  'Fly ash bricks',
 ]
 
 export default function ExampleChips({ onSelect }: ExampleChipsProps) {
-  const [examples, setExamples] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, 6))
-
-  useEffect(() => {
-    fetch('/api/examples')
-      .then(r => r.json())
-      .then((data: { examples: string[] }) => {
-        if (data.examples?.length) setExamples(data.examples.slice(0, 8))
-      })
-      .catch(() => {/* use fallback */})
-  }, [])
-
   return (
-    <div>
-      <p
-        className="mb-2"
-        style={{
-          fontFamily: 'var(--font-body)',
-          fontSize: '11px',
-          fontWeight: 500,
-          color: 'var(--text-muted)',
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-        }}
-      >
-        Try an example
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {examples.map((ex) => (
-          <button
-            key={ex}
-            className="example-chip"
-            onClick={() => onSelect(ex)}
-          >
-            {ex}
-          </button>
-        ))}
-      </div>
-    </div>
+    <motion.div 
+      className="mt-8 flex flex-wrap gap-3 justify-center"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.3 }}
+    >
+      {examples.map((example, index) => (
+        <motion.button
+          key={example}
+          onClick={() => onSelect(example)}
+          className="glass-light px-5 py-2.5 rounded-full text-sm text-[#D6CCC2] hover:bg-white/10 hover:text-[#F8F5F2] transition-all cursor-pointer"
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3, delay: 0.4 + index * 0.1 }}
+          whileHover={{ scale: 1.05, y: -2 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          {example}
+        </motion.button>
+      ))}
+    </motion.div>
   )
 }

@@ -1,48 +1,29 @@
 'use client'
 
-import React, { useState, useCallback, useRef } from 'react'
-import Header from '../components/Header'
+import React, { useState, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import Navbar from '../components/Navbar'
 import SearchBar from '../components/SearchBar'
-import PipelineTracer from '../components/PipelineTracer'
 import ResultCard, { ResultCardSkeleton } from '../components/ResultCard'
 import ExampleChips from '../components/ExampleChips'
+import Sidebar from '../components/Sidebar'
+import FloatingParticles from '../components/FloatingParticles'
 import StatsBanner from '../components/StatsBanner'
-import ArchitectureSidebar from '../components/ArchitectureSidebar'
-import type { SearchResponse, SearchState } from '../types'
-
-// Parse per-standard rationale lines from Gemini markdown
-function parseRationales(rationale?: string): Record<string, string> {
-  if (!rationale) return {}
-  const map: Record<string, string> = {}
-  const lines = rationale.split('\n')
-  for (const line of lines) {
-    const match = line.match(/\*\*IS\s*([\d()Part\s:]+\d{4})\*\*\s*[—–-]\s*(.+)/)
-    if (match) {
-      const id = `IS ${match[1].trim()}`
-      map[id] = match[2].trim()
-    }
-  }
-  return map
-}
+import FeatureCards from '../components/FeatureCards'
+import type { SearchResponse } from '../types'
 
 export default function Home() {
   const [query, setQuery] = useState('')
-  const [state, setState] = useState<SearchState>('idle')
+  const [loading, setLoading] = useState(false)
   const [response, setResponse] = useState<SearchResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const resultsRef = useRef<HTMLDivElement>(null)
 
   const handleSearch = useCallback(async () => {
     if (!query.trim() || query.length < 3) return
 
-    setState('loading')
+    setLoading(true)
     setResponse(null)
     setError(null)
-
-    // Scroll to results area
-    setTimeout(() => {
-      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 100)
 
     try {
       const res = await fetch('/api/search', {
@@ -58,19 +39,18 @@ export default function Home() {
 
       const data: SearchResponse = await res.json()
       setResponse(data)
-      setState('done')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'An unexpected error occurred'
       setError(message)
-      setState('error')
+    } finally {
+      setLoading(false)
     }
   }, [query])
 
   const handleExampleSelect = (text: string) => {
     setQuery(text)
-    // Small delay so user sees the text appear before auto-submit
     setTimeout(() => {
-      setState('loading')
+      setLoading(true)
       setResponse(null)
       setError(null)
 
@@ -85,251 +65,296 @@ export default function Home() {
         })
         .then((data: SearchResponse) => {
           setResponse(data)
-          setState('done')
-          setTimeout(() => {
-            resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          }, 200)
         })
         .catch(err => {
           setError(err.message)
-          setState('error')
         })
-    }, 350)
+        .finally(() => {
+          setLoading(false)
+        })
+    }, 200)
   }
 
-  const rationales = parseRationales(response?.rationale)
+  const hasResults = response && response.results.length > 0
 
   return (
-    <div className="min-h-screen flex flex-col relative z-10">
-      <Header />
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Layer 1: Background Image */}
+      <div 
+        className="fixed inset-0 z-0"
+        style={{
+          backgroundImage: 'url(/backgroundimage.jpeg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          filter: 'blur(4px) saturate(0.9) brightness(0.8)',
+          transform: 'scale(1.05)',
+        }}
+      />
+      
+      {/* Layer 2: Dark Overlay Gradient */}
+      <div 
+        className="fixed inset-0 z-0"
+        style={{
+          background: 'linear-gradient(to bottom, rgba(20, 12, 8, 0.6), rgba(20, 12, 8, 0.75))',
+        }}
+      />
 
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8">
-        <div className="lg:grid lg:grid-cols-[1fr_300px] lg:gap-8">
+      {/* Floating Particles */}
+      <FloatingParticles />
 
-          {/* ── Left: Search + Results ── */}
-          <div className="space-y-6">
+      {/* Layer 3: Glass UI Content */}
+      <div className="relative z-10">
+        <Navbar />
 
-            {/* Search box */}
-            <div className="animate-fade-up">
-              <SearchBar
-                value={query}
-                onChange={setQuery}
-                onSubmit={handleSearch}
-                isLoading={state === 'loading'}
-              />
-            </div>
-
-            {/* Example chips (visible when idle or done) */}
-            {state !== 'loading' && (
-              <div className="animate-fade-up delay-100">
-                <ExampleChips onSelect={handleExampleSelect} />
-              </div>
-            )}
-
-            {/* Results area anchor */}
-            <div ref={resultsRef} />
-
-            {/* Pipeline trace (loading + done) */}
-            <PipelineTracer pipeline={response?.pipeline} state={state} />
-
-            {/* Stats banner (done) */}
-            {state === 'done' && response && (
-              <StatsBanner
-                latency={response.latency_seconds}
-                pipeline={response.pipeline}
-                resultCount={response.results.length}
-              />
-            )}
-
-            {/* Loading skeletons */}
-            {state === 'loading' && (
-              <div className="space-y-4">
-                {[1, 2, 3].map(i => (
-                  <ResultCardSkeleton key={i} rank={i} />
-                ))}
-              </div>
-            )}
-
-            {/* Results */}
-            {state === 'done' && response && (
-              <div className="space-y-4">
-                {response.results.length === 0 ? (
-                  <div
-                    className="card p-10 text-center animate-fade-in"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    <div style={{ fontSize: 36, marginBottom: 12 }}>🔍</div>
-                    <p style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>
-                      No standards found
-                    </p>
-                    <p style={{ fontSize: 14, lineHeight: 1.6 }}>
-                      Try rephrasing your query or using specific material terms
-                      like &quot;cement&quot;, &quot;steel bars&quot;, &quot;aggregates&quot;, or an IS number.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {response.results.map((result, i) => (
-                      <ResultCard
-                        key={result.standard_id}
-                        result={result}
-                        rank={i + 1}
-                        rationale={rationales[result.standard_id]}
-                        animationDelay={i * 80}
-                      />
-                    ))}
-
-                    {/* Full rationale block if available */}
-                    {response.rationale && Object.keys(rationales).length === 0 && (
-                      <div
-                        className="card p-5 animate-fade-up"
-                        style={{ animationDelay: '400ms' }}
-                      >
-                        <div
-                          className="flex items-center gap-2 mb-3"
-                          style={{
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            color: 'var(--text-muted)',
-                            letterSpacing: '0.08em',
-                            textTransform: 'uppercase',
-                            fontFamily: 'var(--font-body)',
-                          }}
-                        >
-                          <span>✦</span> AI Compliance Rationale
-                          <span
-                            className="badge ml-2"
-                            style={{ background: '#F4F1FF', color: '#7C6EAF', border: '1px solid #D8D0F8' }}
-                          >
-                            Gemini
-                          </span>
-                        </div>
-                        <div
-                          style={{
-                            fontFamily: 'var(--font-body)',
-                            fontSize: '14px',
-                            color: 'var(--text-secondary)',
-                            lineHeight: 1.7,
-                            whiteSpace: 'pre-line',
-                          }}
-                        >
-                          {response.rationale}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Error state */}
-            {state === 'error' && (
-              <div
-                className="card p-6 animate-fade-in"
-                style={{ border: '1px solid #F8C8B8', background: '#FFF6F4' }}
+        <main className="max-w-7xl mx-auto px-6">
+          {/* Hero Section - Shows when no results */}
+          <AnimatePresence mode="wait">
+            {!hasResults && !loading && !error && (
+              <motion.div 
+                className="min-h-[calc(100vh-80px)] flex items-center justify-center"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
               >
-                <div className="flex items-start gap-3">
-                  <span style={{ fontSize: 20, flexShrink: 0 }}>⚠️</span>
-                  <div>
-                    <p
-                      style={{
-                        fontFamily: 'var(--font-display)',
-                        fontSize: 16,
-                        fontWeight: 600,
-                        color: '#C0392B',
-                        marginBottom: 6,
-                      }}
+                <div className="w-full max-w-3xl">
+                  <motion.div 
+                    className="text-center mb-12"
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: 0.1 }}
+                  >
+                    <motion.h1 
+                      className="text-5xl font-bold text-[#F8F5F2] mb-4 text-glow cursor-default overflow-hidden" 
+                      style={{ letterSpacing: '0.02em' }}
                     >
-                      Could not reach the engine
-                    </p>
-                    <p style={{ fontSize: 13.5, color: '#8A2C1A', lineHeight: 1.6, marginBottom: 12 }}>
-                      {error}
-                    </p>
-                    <div
-                      className="rounded-lg p-3"
-                      style={{ background: 'rgba(192,57,43,0.07)', border: '1px solid rgba(192,57,43,0.15)' }}
-                    >
-                      <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#8A2C1A' }}>
-                        Make sure the FastAPI server is running:
-                      </p>
-                      <p
-                        style={{
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 12,
-                          color: '#C0392B',
-                          marginTop: 4,
-                          fontWeight: 600,
-                        }}
+                      {/* Animated text reveal */}
+                      <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.5, delay: 0.3 }}
                       >
-                        uvicorn api.main:app --host 0.0.0.0 --port 8000
-                      </p>
+                        {'What BIS standard are you looking for?'.split(' ').map((word, wordIndex) => (
+                          <motion.span
+                            key={wordIndex}
+                            className="inline-block mr-3"
+                            initial={{ opacity: 0, y: 20, rotateX: -90 }}
+                            animate={{ opacity: 1, y: 0, rotateX: 0 }}
+                            transition={{
+                              duration: 0.6,
+                              delay: 0.4 + wordIndex * 0.1,
+                              ease: [0.25, 0.4, 0.25, 1],
+                            }}
+                            whileHover={{ 
+                              scale: 1.1,
+                              color: '#D97706',
+                              transition: { duration: 0.2 }
+                            }}
+                          >
+                            {word.split('').map((char, charIndex) => (
+                              <motion.span
+                                key={charIndex}
+                                className="inline-block"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{
+                                  duration: 0.1,
+                                  delay: 0.4 + wordIndex * 0.1 + charIndex * 0.02,
+                                }}
+                              >
+                                {char}
+                              </motion.span>
+                            ))}
+                          </motion.span>
+                        ))}
+                      </motion.span>
+                    </motion.h1>
+                    <motion.p
+                      className="text-lg text-[#D6CCC2]"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 1.5, duration: 0.6 }}
+                    >
+                      <motion.span
+                        initial={{ width: 0 }}
+                        animate={{ width: '100%' }}
+                        transition={{ delay: 1.5, duration: 1, ease: 'easeOut' }}
+                        className="inline-block overflow-hidden whitespace-nowrap"
+                      >
+                        AI-powered search across 15,000+ Indian standards
+                      </motion.span>
+                    </motion.p>
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 1.8 }}
+                  >
+                    <SearchBar
+                      value={query}
+                      onChange={setQuery}
+                      onSubmit={handleSearch}
+                      isLoading={loading}
+                    />
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 2.0 }}
+                  >
+                    <ExampleChips onSelect={handleExampleSelect} />
+                  </motion.div>
+
+                  {/* Stats Banner */}
+                  <StatsBanner />
+
+                  {/* Feature Cards */}
+                  <FeatureCards />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Compact Search - Shows when results exist */}
+          <AnimatePresence>
+            {(hasResults || loading || error) && (
+              <motion.div 
+                className="pt-12 pb-8"
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="max-w-3xl mx-auto">
+                  <SearchBar
+                    value={query}
+                    onChange={setQuery}
+                    onSubmit={handleSearch}
+                    isLoading={loading}
+                    compact
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Error State */}
+          <AnimatePresence>
+            {error && (
+              <motion.div 
+                className="max-w-3xl mx-auto mb-8"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="glass rounded-2xl p-6 border-red-500/20">
+                  <div className="flex items-start gap-3">
+                    <motion.svg 
+                      className="w-5 h-5 text-red-400 mt-0.5" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 200 }}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </motion.svg>
+                    <div>
+                      <p className="font-semibold text-red-300 mb-1">Could not reach the engine</p>
+                      <p className="text-sm text-red-400">{error}</p>
                     </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             )}
+          </AnimatePresence>
 
-            {/* Idle empty state */}
-            {state === 'idle' && (
-              <div className="animate-fade-up delay-200">
-                <div
-                  className="rounded-2xl p-8 text-center"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(224,123,0,0.04) 0%, transparent 100%)',
-                    border: '1px dashed rgba(224,123,0,0.2)',
-                  }}
-                >
-                  <div style={{ fontSize: 40, marginBottom: 12 }}>🏗️</div>
-                  <p
-                    style={{
-                      fontFamily: 'var(--font-display)',
-                      fontSize: 18,
-                      fontWeight: 600,
-                      color: 'var(--text-secondary)',
-                      marginBottom: 8,
-                    }}
-                  >
-                    Describe your building material product
-                  </p>
-                  <p style={{ fontSize: 13.5, color: 'var(--text-muted)', lineHeight: 1.65, maxWidth: 400, margin: '0 auto' }}>
-                    Enter a natural language description or question. The 6-layer Hybrid RAG pipeline
-                    will find the most relevant BIS IS standards from SP 21.
-                  </p>
+          {/* Results Section */}
+          {(hasResults || loading) && (
+            <div className="pb-16">
+              <div className="flex gap-8">
+                {/* Left - Results List (70%) */}
+                <div className="flex-1">
+                  {loading && (
+                    <div className="space-y-4">
+                      {[1, 2, 3].map(i => (
+                        <ResultCardSkeleton key={i} rank={i} />
+                      ))}
+                    </div>
+                  )}
+
+                  {hasResults && !loading && (
+                    <motion.div 
+                      className="space-y-4"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      {response.results.map((result, idx) => (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.4, delay: idx * 0.1 }}
+                        >
+                          <ResultCard
+                            result={result}
+                            rank={idx + 1}
+                            rationale={response.rationale}
+                          />
+                        </motion.div>
+                      ))}
+                    </motion.div>
+                  )}
+
+                  {response && response.results.length === 0 && !loading && (
+                    <motion.div 
+                      className="glass rounded-2xl p-12 text-center"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.4 }}
+                    >
+                      <motion.svg 
+                        className="w-12 h-12 text-[#D6CCC2] mx-auto mb-4 opacity-50" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </motion.svg>
+                      <p className="text-lg font-semibold text-[#F8F5F2] mb-2">No standards found</p>
+                      <p className="text-sm text-[#D6CCC2]">
+                        Try rephrasing your query or using specific material terms
+                      </p>
+                    </motion.div>
+                  )}
                 </div>
+
+                {/* Right - Sidebar (30%) */}
+                {(hasResults || loading) && (
+                  <div className="w-80 hidden lg:block">
+                    <div className="sticky top-24">
+                      <Sidebar
+                        pipeline={response?.pipeline}
+                        latency={response?.latency_seconds}
+                        loading={loading}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-
-          {/* ── Right: Architecture sidebar ── */}
-          <div className="hidden lg:block">
-            <div className="sticky top-6">
-              <ArchitectureSidebar />
             </div>
-          </div>
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer
-        className="relative z-10"
-        style={{
-          borderTop: '1px solid var(--border)',
-          background: 'var(--bg-card)',
-        }}
-      >
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
-            Built for <strong style={{ color: 'var(--text-secondary)' }}>IIT Tirupati × SS BIS Hackathon 2026</strong>
-            {' · '}
-            Dataset: BIS SP 21 (Building Materials)
-          </p>
-          <div className="flex items-center gap-4">
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              FAISS + BM25 + RRF + TinyBERT
-            </span>
-          </div>
-        </div>
-      </footer>
+          )}
+        </main>
+      </div>
     </div>
   )
 }
