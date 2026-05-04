@@ -1,0 +1,72 @@
+bash
+
+python3 -c "
+# Validate the key logic changes are all correct
+import re
+
+# Test _force_rank_is_match logic
+def force_rank(candidates, is_numbers):
+    if not is_numbers or not candidates:
+        return candidates
+    matched, unmatched = [], []
+    for item in candidates:
+        _, sid = item
+        if any(re.search(rf'\bIS\s*{re.escape(n)}\b', sid, re.IGNORECASE) for n in is_numbers):
+            matched.append(item)
+        else:
+            unmatched.append(item)
+    return matched + unmatched
+
+# Test: oracle correctly places IS 2185 (Part 2) before IS 2185 (Part 3)
+# after cross-encoder orders them
+candidates_after_rerank = [
+    (10, 'IS 2185 (PART 2): 1983'),  # cross-encoder puts Part 2 first (lightweight query)
+    (5,  'IS 2185 (PART 3): 1984'),
+    (8,  'IS 2185 (PART 1): 1979'),
+    (3,  'IS 1077: 1992'),
+]
+is_numbers = {'2185'}
+result = force_rank(candidates_after_rerank, is_numbers)
+assert result[0][1] == 'IS 2185 (PART 2): 1983', f'Expected Part2 first, got {result[0][1]}'
+assert result[1][1] == 'IS 2185 (PART 3): 1984', f'Expected Part3 second, got {result[1][1]}'
+assert result[3][1] == 'IS 1077: 1992', 'Non-2185 should be last'
+print('PASS: force_rank preserves cross-encoder Part2 > Part3 ordering')
+
+# Test: IS 1489 Part disambiguation preserved
+candidates_reranked = [
+    (20, 'IS 1489 (PART 2): 1991'),  # cross-encoder prefers Part2 for calcined-clay query
+    (15, 'IS 1489 (PART1): 1991'),
+    (2,  'IS 455: 1989'),
+]
+result2 = force_rank(candidates_reranked, {'1489'})
+assert result2[0][1] == 'IS 1489 (PART 2): 1991'
+print('PASS: IS 1489 Part2 correctly preserved at rank 1 after force_rank')
+
+# Test normalize compatibility: eval uses replace(' ','').lower()
+def normalize_std(s):
+    return str(s).replace(' ', '').lower()
+
+tests = [
+    ('IS 2185 (PART 2): 1983', 'IS 2185 (Part 2): 1983'),   # case insensitive
+    ('IS 1489 (PART1): 1991',  'IS 1489 (Part 1): 1991'),   # space missing in PART1
+    ('IS 269: 1989',           'IS 269: 1989'),
+    ('IS 383: 1970',           'IS 383: 1970'),
+]
+print()
+print('Normalisation checks:')
+for indexed, expected in tests:
+    n_i = normalize_std(indexed)
+    n_e = normalize_std(expected)
+    match = n_i == n_e
+    print(f'  {\"PASS\" if match else \"FAIL\"}: {repr(indexed)} vs {repr(expected)} => {n_i} == {n_e}: {match}')
+"
+Output
+
+PASS: force_rank preserves cross-encoder Part2 > Part3 ordering
+PASS: IS 1489 Part2 correctly preserved at rank 1 after force_rank
+
+Normalisation checks:
+  PASS: 'IS 2185 (PART 2): 1983' vs 'IS 2185 (Part 2): 1983' => is2185(part2):1983 == is2185(part2):1983: True
+  PASS: 'IS 1489 (PART1): 1991' vs 'IS 1489 (Part 1): 1991' => is1489(part1):1991 == is1489(part1):1991: True
+  PASS: 'IS 269: 1989' vs 'IS 269: 1989' => is269:1989 == is269:1989: True
+  PASS: 'IS 383: 1970' vs 'IS 383: 1970' => is383:1970 == is383:1970: True
