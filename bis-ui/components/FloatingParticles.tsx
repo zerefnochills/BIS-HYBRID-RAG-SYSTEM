@@ -3,16 +3,22 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 
-export default function FloatingParticles() {
-  const particles = Array.from({ length: 20 }, (_, i) => ({
-    id: i,
-    size: Math.random() * 4 + 2,
-    x: Math.random() * 100,
-    y: Math.random() * 100,
-    duration: Math.random() * 10 + 10,
-    delay: Math.random() * 5,
-  }))
+const particles = Array.from({ length: 20 }, (_, id) => {
+  const seed = (id + 1) * 9301 + 49297
+  const value = (offset: number) => ((seed + offset * 233) % 1000) / 1000
 
+  return {
+    id,
+    size: value(1) * 4 + 2,
+    x: value(2) * 100,
+    y: value(3) * 100,
+    drift: value(4) * 20 - 10,
+    duration: value(5) * 10 + 10,
+    delay: value(6) * 5,
+  }
+})
+
+export default function FloatingParticles() {
   return (
     <div className="fixed inset-0 z-[1] pointer-events-none overflow-hidden">
       {particles.map((particle) => (
@@ -27,7 +33,7 @@ export default function FloatingParticles() {
           }}
           animate={{
             y: [0, -30, 0],
-            x: [0, Math.random() * 20 - 10, 0],
+            x: [0, particle.drift, 0],
             opacity: [0.2, 0.5, 0.2],
             scale: [1, 1.2, 1],
           }}

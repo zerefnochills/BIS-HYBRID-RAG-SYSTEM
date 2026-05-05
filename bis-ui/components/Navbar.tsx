@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import Image from 'next/image'
 import { motion } from 'framer-motion'
 
 export default function Navbar() {
@@ -20,9 +21,11 @@ export default function Navbar() {
               whileHover={{ scale: 1.05, rotate: 5 }}
               transition={{ type: "spring", stiffness: 300 }}
             >
-              <img 
+              <Image
                 src="/bis-logo Background Removed.png" 
                 alt="BIS Logo" 
+                width={80}
+                height={80}
                 className="w-full h-full object-cover"
               />
             </motion.div>

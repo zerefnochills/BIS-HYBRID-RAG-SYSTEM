@@ -24,7 +24,7 @@ function parseRationale(rationale: string | undefined, standardId: string): stri
   const lines = rationale.split('\n')
   for (const line of lines) {
     if (line.includes(standardId)) {
-      const match = line.match(/[—–-]\s*(.+)/)
+      const match = line.match(/[-\u2013\u2014]\s*(.+)/)
       if (match) return match[1].trim()
     }
   }
@@ -129,7 +129,10 @@ export default function ResultCard({ result, rank, rationale }: ResultCardProps)
 
 export function ResultCardSkeleton({ rank }: { rank: number }) {
   return (
-    <div className="glass rounded-2xl p-6 animate-pulse">
+    <div className="glass rounded-2xl p-6 animate-pulse relative">
+      <div className="absolute top-4 left-4 w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-sm font-bold text-white/40">
+        {rank}
+      </div>
       <div className="flex items-start gap-4">
         <div className="w-8 h-8 bg-white/10 rounded-lg flex-shrink-0" />
         <div className="flex-1 space-y-3">

@@ -92,6 +92,7 @@ CACHE_SIM_THRESH = 0.97
 
 # Persistent cache path (relative to working directory)
 PERSISTENT_CACHE_PATH = ".cache/query_cache.pkl"
+CACHE_VERSION = 2
 
 
 # ---------------------------------------------------------------------------
@@ -439,6 +440,9 @@ class SemanticCache:
             try:
                 with open(self._persist_path, "rb") as f:
                     saved = pickle.load(f)
+                if saved.get("version") != CACHE_VERSION:
+                    print(f"[cache] Ignoring stale disk cache: {self._persist_path}")
+                    return
                 self._md5 = saved.get("md5", {})
                 print(f"[cache] Loaded {len(self._md5)} entries from disk cache: {self._persist_path}")
             except Exception as e:
@@ -448,7 +452,7 @@ class SemanticCache:
         try:
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self._persist_path, "wb") as f:
-                pickle.dump({"md5": self._md5}, f)
+                pickle.dump({"version": CACHE_VERSION, "md5": self._md5}, f)
         except Exception as e:
             print(f"[cache] WARNING: could not save disk cache: {e}")
 
@@ -611,16 +615,29 @@ def _extract_id(chunk: str, idx: int, metadata: list[dict]) -> str:
     if 0 <= idx < len(metadata):
         sid = metadata[idx].get("standard_id", "")
         if sid:
-            return sid
+            return _format_standard_id(sid)
     m = _IS_PAT.search(chunk)
     if m:
         num = re.sub(r"\s+", " ", m.group(1).strip())
-        return f"IS {num}: {m.group(2)}"
+        return _format_standard_id(f"IS {num}: {m.group(2)}")
     return chunk[:30]
+
+
+def _format_standard_id(s: str) -> str:
+    return re.sub(r"\(\s*PART\s*(\d+)\s*\)", r"(Part \1)", str(s), flags=re.IGNORECASE)
 
 
 def _is_valid_standard(s: str) -> bool:
     return bool(_IS_PAT.search(str(s)))
+
+
+def normalize_standard(s: str) -> str:
+    """Normalize a standard ID for family-level deduplication."""
+    match = _IS_PAT.search(str(s))
+    if not match:
+        return re.sub(r"\s+", "", str(s).lower())
+    num = re.sub(r"\s+", "", match.group(1).lower())
+    return f"is{num}"
 
 
 def _get_is_numbers(query: str) -> set[str]:
@@ -707,6 +724,42 @@ def _force_rank_part(
     return preferred + others
 
 
+def _direct_is_standards(
+    is_numbers: set[str],
+    part_hint: Optional[str],
+    chunks: list,
+    metadata: list,
+    top_k: int,
+) -> list[str]:
+    """
+    Return metadata-backed standards for explicit/oracle IS-number matches.
+
+    This is a conservative fast path: it only fires after a query has already
+    resolved to one or more IS numbers, and it never fabricates identifiers.
+    """
+    if not is_numbers:
+        return []
+
+    candidates: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for idx in range(max(len(chunks), len(metadata))):
+        chunk = chunks[idx] if idx < len(chunks) else ""
+        sid = _extract_id(chunk, idx, metadata)
+        if not _is_valid_standard(sid):
+            continue
+        if not any(re.search(rf"\bIS\s*{re.escape(n)}\b", sid, re.IGNORECASE) for n in is_numbers):
+            continue
+
+        norm = normalize_standard(sid)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        candidates.append((idx, sid))
+
+    candidates = _force_rank_part(candidates, part_hint)
+    return [sid for _, sid in candidates[:top_k]]
+
+
 # ---------------------------------------------------------------------------
 # Main retrieval function
 # ---------------------------------------------------------------------------
@@ -728,9 +781,10 @@ def hybrid_retrieve(
                    Cold path           ->   0.5–2.0  s  (embedding + reranker)
     """
     t0 = time.perf_counter()
+    cache_query = f"{query}\n__top_k={top_k}"
 
     # -- Tier-1 cache: MD5 exact match — NO embedding needed ---------------
-    tier1 = engine.cache.get(query, query_vec=None)
+    tier1 = engine.cache.get(cache_query, query_vec=None)
     if tier1 is not None:
         return tier1[0], round(time.perf_counter() - t0, 6)
 
@@ -738,6 +792,16 @@ def hybrid_retrieve(
     explicit_is          = _get_is_numbers(query)
     oracle_is, part_hint = _oracle_is_numbers(query)
     is_numbers           = explicit_is | oracle_is   # merged — feeds RRF boost AND force-rank
+
+    direct_standards = _direct_is_standards(
+        is_numbers,
+        part_hint,
+        engine.chunks,
+        engine.metadata,
+        top_k,
+    )
+    if direct_standards:
+        return direct_standards, round(time.perf_counter() - t0, 6)
 
     # -- Layer 1b: Query expansion (text enrichment for embed + BM25) ------
     if engine.gemini is not None:
@@ -754,7 +818,7 @@ def hybrid_retrieve(
     ).astype("float32")[0]
 
     # -- Tier-2 cache: FAISS cosine on cached query vectors ----------------
-    tier2 = engine.cache.get(query, query_vec=qvec)
+    tier2 = engine.cache.get(cache_query, query_vec=qvec)
     if tier2 is not None:
         return tier2[0], round(time.perf_counter() - t0, 6)
 
@@ -793,8 +857,7 @@ def hybrid_retrieve(
         sid  = _extract_id(engine.chunks[idx], idx, engine.metadata)
         if not _is_valid_standard(sid):
             continue
-        # Normalise for dedup: strip spaces, lowercase (matches eval script logic)
-        norm = sid.replace(" ", "").lower()
+        norm = normalize_standard(sid)
         if norm not in seen:
             seen.add(norm)
             candidates.append((idx, sid))
@@ -830,7 +893,7 @@ def hybrid_retrieve(
     standards = [sid for _, sid in candidates[:top_k] if _is_valid_standard(sid)]
 
     latency = round(time.perf_counter() - t0, 6)
-    engine.cache.put(query, qvec, (standards, latency))
+    engine.cache.put(cache_query, qvec, (standards, latency))
     return standards, latency
 
 

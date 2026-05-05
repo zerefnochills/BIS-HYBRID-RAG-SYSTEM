@@ -3,7 +3,7 @@
 # Python  : 3.9+
 
 # ── PDF parsing ───────────────────────────────────────────────────
-#pymupdf==1.24.0
+pymupdf>=1.24.0
 
 # ── Embeddings & reranker ─────────────────────────────────────────
 # CRITICAL: bge-large-en-v1.5 requires sentence-transformers >= 2.3.0

@@ -35,6 +35,10 @@ import sys
 import time
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
 # ── Make src importable when run from repo root ───────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

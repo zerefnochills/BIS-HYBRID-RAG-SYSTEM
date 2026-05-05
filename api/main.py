@@ -14,7 +14,6 @@ Environment variables (same as inference.py):
 
 import os
 import sys
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -28,8 +27,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.retrieve import (
     RetrievalEngine,
     _get_is_numbers,
+    _oracle_is_numbers,
     hybrid_retrieve,
     load_engine,
+    normalize_standard,
 )
 
 
@@ -44,6 +45,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "https://*.vercel.app"],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -133,13 +135,13 @@ async def search(req: SearchRequest):
     query = req.query.strip()
 
     # ── Run retrieval (same as inference.py) ──────────────────────────────
-    t0 = time.perf_counter()
     standards, latency = hybrid_retrieve(query, engine, top_k=req.top_k)
     # latency returned by hybrid_retrieve is the engine's own measurement
 
     # ── Detect routing track ──────────────────────────────────────────────
     is_nums_in_query = _get_is_numbers(query)
-    track = "fast" if is_nums_in_query else "rerank"
+    oracle_nums, _ = _oracle_is_numbers(query)
+    track = "fast" if is_nums_in_query or oracle_nums else "rerank"
 
     # ── Enrich results with metadata ──────────────────────────────────────
     results: list[StandardResult] = []
@@ -147,7 +149,7 @@ async def search(req: SearchRequest):
         title = ""
         category = ""
         for md in engine.metadata:
-            if md["standard_id"] == sid:
+            if normalize_standard(md["standard_id"]) == normalize_standard(sid):
                 title = md.get("title", "")
                 category = md.get("category", "")
                 break

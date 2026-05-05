@@ -152,7 +152,7 @@ export default function Sidebar({ pipeline, latency, loading }: SidebarProps) {
               </motion.div>
 
               {/* Latency */}
-              {latency && (
+              {typeof latency === 'number' && (
                 <motion.div 
                   className="pt-4 border-t border-white/10"
                   initial={{ opacity: 0, y: 10 }}
